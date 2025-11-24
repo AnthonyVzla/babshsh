@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Bambam Delivery</title>
+    <title>Bamvam Delivery</title>
     <!-- Carga de Tailwind CSS para estilos -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
@@ -11,7 +11,7 @@
             theme: {
                 extend: {
                     colors: {
-                        'primary': '#E3342F', // Rojo para acentos (Bambam)
+                        'primary': '#E3342F', // Rojo para acentos (Bamvam)
                         'secondary': '#F6AD55', // Naranja para botones de acción
                         'bg-main': '#F7F7F7', // Fondo principal claro
                     },
@@ -52,7 +52,7 @@
     <!-- Header y Navegación Principal -->
     <header class="w-full max-w-4xl mb-8 sticky top-0 bg-bg-main z-10">
         <div class="flex justify-between items-center py-4 px-2">
-            <h1 class="text-3xl font-bold text-primary cursor-pointer" onclick="navigate('home')">Bambam 🛵 Delivery</h1>
+            <h1 class="text-3xl font-bold text-primary cursor-pointer" onclick="navigate('home')">Bamvam 🛵 Delivery</h1>
             <div class="flex items-center space-x-4">
                 <button id="cart-btn" class="bg-secondary text-gray-800 p-2 rounded-full shadow-lg hover:bg-yellow-400 transition hidden" onclick="navigate('cart')">
                     🛒 <span id="cart-count" class="text-sm font-bold">0</span>
@@ -89,7 +89,8 @@
                 </button>
                 
                 <div class="mt-6 text-center">
-                    <a href="#" id="toggle-register" class="text-primary hover:text-red-700 text-sm font-medium">¿No tienes cuenta? Regístrate</a>
+                    <!-- FIX: Se añade onclick al enlace para asegurar el funcionamiento del toggle -->
+                    <a href="#" id="toggle-register" class="text-primary hover:text-red-700 text-sm font-medium" onclick="event.preventDefault(); toggleAuthMode();">¿No tienes cuenta? Regístrate</a>
                 </div>
             </div>
         </div>
@@ -419,7 +420,7 @@
             }
         };
 
-        const toggleAuthMode = () => {
+        window.toggleAuthMode = () => {
             isRegisterMode = !isRegisterMode;
             document.getElementById('auth-title').textContent = isRegisterMode ? 'Crear Cuenta (Registrar)' : 'Iniciar Sesión';
             document.getElementById('auth-btn').textContent = isRegisterMode ? 'Registrar Cuenta' : 'Iniciar Sesión';
@@ -427,7 +428,6 @@
             document.getElementById('register-fields').classList.toggle('hidden', !isRegisterMode);
             hideMessage();
         };
-        document.getElementById('toggle-register').addEventListener('click', (e) => { e.preventDefault(); toggleAuthMode(); });
 
         const signOutUser = async () => {
             try {
@@ -652,7 +652,7 @@
                 });
 
                 // 2. Generar Mensaje de WhatsApp
-                let whatsappMessage = `*¡Tienes un nuevo pedido de Bambam delivery delivery!* (ID: ${orderRef.id})\n\n`;
+                let whatsappMessage = `*¡Nuevo Pedido Bamvam!* (ID: ${orderRef.id})\n\n`;
                 whatsappMessage += `*Cliente:* ${firstName} ${lastName}\n`;
                 whatsappMessage += `*Teléfono:* ${phone}\n`;
                 whatsappMessage += `*Dirección:* ${address}\n\n`;
