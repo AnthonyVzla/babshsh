@@ -1,0 +1,1441 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bambam Delivery</title>
+    <!-- Carga de Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
+    <!-- Iconos de Lucide (para botones y UI) -->
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #f7f9fb; }
+        .card { box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.06); }
+        .btn-primary { background-color: #ef4444; border-color: #dc2626; color: white; }
+        .btn-primary:hover { background-color: #dc2626; }
+        .spinner { border: 4px solid rgba(0, 0, 0, 0.1); border-top: 4px solid #ef4444; border-radius: 50%; width: 24px; height: 24px; animation: spin 1s linear infinite; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        .whatsapp-btn { background-color: #25d366; color: white; }
+        .whatsapp-btn:hover { background-color: #128c7e; }
+    </style>
+</head>
+<body class="p-4 sm:p-8 min-h-screen flex flex-col items-center">
+
+    <div id="main-app" class="w-full max-w-6xl space-y-8">
+        
+        <!-- Encabezado Fijo -->
+        <header class="bg-white p-4 rounded-xl card sticky top-0 z-10 flex justify-between items-center border-b border-gray-100">
+            <h1 class="text-3xl font-extrabold text-red-600">Bambam Delivery</h1>
+            <div class="flex items-center space-x-3">
+                <button id="cart-button" class="relative p-2 rounded-full bg-gray-100 hover:bg-gray-200 transition duration-150">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-shopping-cart"><circle cx="8" cy="21" r="1"/><circle cx="19" cy="21" r="1"/><path d="M2.05 2.05h2l2.66 12.42a2 2 0 0 0 2 1.58h9.72a2 2 0 0 0 2-1.58L23 6H6"/></svg>
+                    <span id="cart-count" class="absolute top-0 right-0 inline-flex items-center justify-center px-2 py-1 text-xs font-bold leading-none text-red-100 transform translate-x-1/2 -translate-y-1/2 bg-red-600 rounded-full hidden">0</span>
+                </button>
+                <button id="auth-button" class="text-sm font-medium px-4 py-2 rounded-full bg-red-500 text-white hover:bg-red-600 transition duration-150">
+                    Iniciar Sesión
+                </button>
+            </div>
+        </header>
+
+        <!-- Contenedor Principal de Vistas -->
+        <div id="view-container">
+            <!-- Las vistas se inyectan aquí -->
+        </div>
+
+        <!-- Pie de página y Botón de Admin -->
+        <footer class="text-center mt-12 py-4 border-t border-gray-200">
+            <button id="admin-login-btn" class="text-xs text-gray-500 hover:text-red-600 transition duration-150">
+                Acceso Administrador
+            </button>
+        </footer>
+    </div>
+
+    <!-- MÓDULO DE SCRIPTS Y LÓGICA -->
+    <script type="module">
+        // Importación de módulos de Firebase
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { 
+            getFirestore, 
+            collection, 
+            doc, 
+            getDocs, 
+            getDoc, 
+            setDoc, 
+            addDoc, 
+            updateDoc, 
+            deleteDoc, 
+            query, 
+            where, 
+            onSnapshot,
+            serverTimestamp,
+            setLogLevel
+        } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // Establecer el nivel de registro de Firebase para depuración
+        setLogLevel('debug');
+
+        // --- 1. CONFIGURACIÓN E INICIALIZACIÓN DE FIREBASE ---
+        
+        // Configuración de la aplicación proporcionada por el usuario (Fallback)
+        const USER_FIREBASE_CONFIG = {
+            apiKey: "AIzaSyA9hjFmfNn1BnomqECKGr5YloU8LlM2OdM", // Clave corregida del prompt
+            authDomain: "bambamdelivery-626e6.firebaseapp.com",
+            projectId: "bambamdelivery-626e6",
+            storageBucket: "bambamdelivery-626e6.firebasestorage.app",
+            messagingSenderId: "840361587686",
+            appId: "1:840361587686:web:09326460bb14535b67dc27"
+        };
+
+        // PRIORIZAR la configuración del entorno Canvas si está disponible
+        const firebaseConfig = typeof __firebase_config !== 'undefined'
+            ? JSON.parse(__firebase_config)
+            : USER_FIREBASE_CONFIG;
+        
+        // Variables globales del entorno Canvas (se usan para el Auth Token y App ID)
+        // Usamos el projectId como fallback para appId si no está definido
+        const appId = typeof __app_id !== 'undefined' ? __app_id : firebaseConfig.projectId; 
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+        
+        let app, auth, db;
+        try {
+            // Usamos la configuración de la app para la inicialización.
+            app = initializeApp(firebaseConfig);
+            auth = getAuth(app);
+            db = getFirestore(app);
+            console.log("Firebase inicializado con éxito.");
+        } catch (error) {
+            console.error("ERROR FATAL AL INICIAR FIREBASE:", error);
+            // Mostrar un mensaje de error visible en la interfaz
+            document.getElementById('view-container').innerHTML = `
+                <div class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative my-8" role="alert">
+                    <strong class="font-bold">Error Fatal de Firebase:</strong>
+                    <span class="block sm:inline">${error.message}. Por favor, verifica tu clave de API, el ID de la app o las reglas de seguridad.</span>
+                </div>
+            `;
+            // Detener la ejecución si no se inicializa correctamente
+            throw new Error("Firebase init failure.");
+        }
+        
+        // --- VARIABLES DE ESTADO GLOBALES ---
+        let currentView = 'home';
+        let currentUser = null;
+        let currentUserRole = 'customer'; // 'customer', 'admin', 'supervisor'
+        let cart = []; // { restaurantId, item: { id, name, price, quantity, observation } }
+        let selectedRestaurant = null;
+        let unsubscribeOrders = null; // Para el listener de pedidos en admin
+
+        // Referencias DOM
+        const viewContainer = document.getElementById('view-container');
+        const authButton = document.getElementById('auth-button');
+        const cartButton = document.getElementById('cart-button');
+        const cartCountSpan = document.getElementById('cart-count');
+        
+        // Constantes de WhatsApp
+        const WA_SUPPORT_NUMBER = '584128481584'; // Número para registrar negocio
+
+        // --- UTILIDADES DE FIREBASE ---
+        function getCollectionRef(collectionName, isPrivate = false) {
+            // Utilizamos la ruta privada para perfiles de usuario y la pública para el resto de datos
+            if (isPrivate && currentUser) {
+                // Ruta privada: artifacts/{appId}/users/{userId}/perfiles/
+                return collection(db, `artifacts/${appId}/users/${currentUser.uid}/perfiles`);
+            }
+            // Ruta pública: artifacts/{appId}/public/data/{collectionName}
+            return collection(db, `artifacts/${appId}/public/data/${collectionName}`);
+        }
+
+        // --- 2. GESTIÓN DE AUTENTICACIÓN Y PERFIL ---
+        
+        async function loadUserProfile(uid) {
+            try {
+                // La colección de perfiles de usuario es privada, debe usar la ruta correcta
+                const userDocRef = doc(getCollectionRef('perfiles', true), uid);
+                const docSnap = await getDoc(userDocRef);
+                if (docSnap.exists()) {
+                    return docSnap.data();
+                }
+            } catch (error) {
+                console.error("Error al cargar perfil de usuario:", error);
+            }
+            return { role: 'customer' }; // Default role
+        }
+
+        onAuthStateChanged(auth, async (user) => {
+            if (user) {
+                currentUser = user;
+                // Si ya estamos en el modo Admin (por el login manual), mantenemos el rol
+                if (currentUserRole !== 'admin') {
+                    const profile = await loadUserProfile(user.uid);
+                    currentUserRole = profile.role || 'customer';
+                    authButton.textContent = `Hola, ${profile.name || 'Cliente'}`;
+                } else {
+                    authButton.textContent = `Hola, ${currentUserRole}`;
+                }
+
+                authButton.onclick = () => handleLogout();
+                authButton.classList.remove('bg-red-500');
+                authButton.classList.add('bg-red-600');
+            } else {
+                currentUser = null;
+                currentUserRole = 'customer';
+                authButton.textContent = 'Iniciar Sesión';
+                authButton.onclick = () => navigateTo('login');
+                authButton.classList.remove('bg-red-600');
+                authButton.classList.add('bg-red-500');
+                // Si el usuario no está, aseguramos que solo vea la vista de home o login
+                if (currentView !== 'login' && currentView !== 'register' && currentView !== 'admin-login') {
+                     navigateTo('home');
+                }
+            }
+
+            // Después de cargar el estado de autenticación, renderizar la vista inicial
+            if (currentView === 'home' || currentView === 'login' || currentView === 'register' || currentView === 'admin-panel') {
+                renderView();
+            }
+        });
+
+        // Autenticación inicial del Canvas
+        async function canvasAuthInit() {
+            try {
+                const auth = getAuth(app);
+                if (initialAuthToken) {
+                    await signInWithCustomToken(auth, initialAuthToken);
+                } else {
+                    // Si no hay token, iniciamos anónimamente para permitir la lectura pública
+                    await signInAnonymously(auth);
+                }
+            } catch (error) {
+                console.error("Error en autenticación inicial de Canvas:", error);
+                // No lanzamos error fatal aquí, solo fallará la lectura/escritura si no hay permisos.
+            }
+        }
+        
+        // Llamada al inicio
+        canvasAuthInit();
+        
+        // --- 3. FUNCIONES DE NAVEGACIÓN Y VISTAS ---
+
+        function navigateTo(view, data = null) {
+            currentView = view;
+            if (view === 'menu' && data) {
+                // Si navegamos al menú, necesitamos cargar los productos
+                loadMenuData(data.id); 
+            } else {
+                selectedRestaurant = data;
+                renderView();
+            }
+        }
+
+        function updateCartUI() {
+            const totalItems = cart.reduce((sum, item) => sum + item.quantity, 0);
+            cartCountSpan.textContent = totalItems;
+            if (totalItems > 0) {
+                cartCountSpan.classList.remove('hidden');
+            } else {
+                cartCountSpan.classList.add('hidden');
+            }
+        }
+
+        cartButton.addEventListener('click', () => {
+            if (cart.length > 0) {
+                navigateTo('cart');
+            } else {
+                alertModal("Carrito Vacío", "Tu carrito de compras está vacío. ¡Añade algunos productos primero!");
+            }
+        });
+
+        document.getElementById('admin-login-btn').addEventListener('click', () => {
+            navigateTo('admin-login');
+        });
+
+        function alertModal(title, message) {
+            console.warn(`[Modal] ${title}: ${message}`);
+            // Implementación simple de un modal de alerta
+            const modalHTML = `
+                <div id="simple-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                    <div class="bg-white p-6 rounded-xl card max-w-sm w-full">
+                        <h3 class="text-xl font-bold text-red-600 mb-3">${title}</h3>
+                        <p class="text-gray-700">${message}</p>
+                        <button onclick="document.getElementById('simple-modal').remove()" class="mt-4 w-full btn-primary px-4 py-2 rounded-lg font-medium">Aceptar</button>
+                    </div>
+                </div>
+            `;
+            const existingModal = document.getElementById('simple-modal');
+            if (existingModal) existingModal.remove();
+            document.body.insertAdjacentHTML('beforeend', modalHTML);
+        }
+
+        // --- 4. LÓGICA DE VISTAS ---
+
+        function renderView() {
+            // Si Firebase no se inicializó, no continuar
+            if (!app) return;
+            
+            viewContainer.innerHTML = `<div class="spinner mx-auto my-16"></div>`; // Mostrar spinner
+
+            // Limpiar listener de pedidos si existe
+            if (unsubscribeOrders) {
+                unsubscribeOrders();
+                unsubscribeOrders = null;
+            }
+
+            let viewHTML = '';
+            switch (currentView) {
+                case 'home':
+                    viewHTML = renderHomeView();
+                    break;
+                case 'login':
+                case 'register':
+                    viewHTML = renderAuthView(currentView);
+                    break;
+                case 'menu':
+                    // loadMenuData se encarga de renderizar esta vista
+                    return; 
+                case 'cart':
+                    viewHTML = renderCartView();
+                    break;
+                case 'admin-login':
+                    viewHTML = renderAdminLoginView();
+                    break;
+                case 'admin-panel':
+                    if (currentUserRole === 'admin' || currentUserRole === 'supervisor') {
+                        viewHTML = renderAdminPanel();
+                    } else {
+                        viewHTML = renderAccessDenied();
+                    }
+                    break;
+                default:
+                    viewHTML = renderHomeView();
+            }
+            viewContainer.innerHTML = viewHTML;
+
+            // Ejecutar lógica post-renderizado (listeners, fetches)
+            if (currentView === 'home') loadRestaurants();
+            if (currentView === 'admin-panel') loadAdminContent();
+        }
+
+        function renderAccessDenied() {
+            return `
+                <div class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative my-8 text-center">
+                    <strong class="font-bold">Acceso Denegado:</strong>
+                    <span class="block sm:inline">No tienes permisos suficientes para acceder al Panel de Administración.</span>
+                    <button onclick="window.BAMBAM_APP.navigateTo('home')" class="text-red-600 font-medium mt-3 block mx-auto">
+                        Volver al Inicio
+                    </button>
+                </div>
+            `;
+        }
+
+
+        // --- VISTA HOME (CLIENTE) ---
+        function renderHomeView() {
+            return `
+                <section class="text-center p-8 bg-white rounded-xl card">
+                    <h2 class="text-3xl font-bold text-gray-800 mb-4">¡Pide a tus locales favoritos!</h2>
+                    <p class="text-gray-600 mb-6">Explora los restaurantes activos en tu zona.</p>
+                    <a href="https://wa.me/${WA_SUPPORT_NUMBER}?text=Hola,%20me%20interesa%20registrar%20mi%20negocio%20en%20Bambam%20Delivery." target="_blank" class="inline-block whatsapp-btn font-bold py-3 px-6 rounded-lg transition duration-300">
+                        Quiero registrar mi negocio (WhatsApp)
+                    </a>
+                </section>
+                
+                <section class="mt-8">
+                    <h3 class="text-2xl font-semibold text-gray-700 mb-4 border-b pb-2">Locales Activos</h3>
+                    <div id="restaurants-list" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                        <p class="text-gray-500 col-span-full">Cargando restaurantes...</p>
+                    </div>
+                </section>
+            `;
+        }
+
+        async function loadRestaurants() {
+            const listDiv = document.getElementById('restaurants-list');
+            try {
+                const q = getCollectionRef('restaurants');
+                const querySnapshot = await getDocs(q);
+                
+                if (querySnapshot.empty) {
+                    listDiv.innerHTML = `<p class="text-center text-gray-500 col-span-full p-8 border border-dashed rounded-xl">No hay locales activos en este momento.</p>`;
+                    return;
+                }
+
+                listDiv.innerHTML = querySnapshot.docs.map(doc => {
+                    const data = doc.data();
+                    const photoUrl = data.photoUrl || 'https://placehold.co/400x200/ef4444/ffffff?text=Logo';
+                    return `
+                        <div data-id="${doc.id}" class="restaurant-card bg-white rounded-xl card overflow-hidden cursor-pointer hover:shadow-lg transition duration-300 transform hover:-translate-y-1" onclick="window.BAMBAM_APP.navigateTo('menu', {id: '${doc.id}', name: '${data.name}', whatsapp: '${data.whatsapp}'})">
+                            <img src="${photoUrl}" onerror="this.onerror=null;this.src='https://placehold.co/400x200/ef4444/ffffff?text=Bambam';" alt="Local ${data.name}" class="w-full h-40 object-cover">
+                            <div class="p-4">
+                                <h4 class="text-xl font-bold text-gray-800">${data.name}</h4>
+                                <p class="text-sm text-gray-500 mt-1">Ver Menú y Pedir</p>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+
+            } catch (error) {
+                listDiv.innerHTML = `<p class="text-red-500 col-span-full">Error al cargar locales: ${error.message}</p>`;
+                console.error("Error al cargar restaurantes:", error);
+            }
+        }
+
+
+        // --- VISTA MENÚ DEL LOCAL ---
+        function renderMenuView(restaurant) {
+            if (!restaurant) return `<p class="text-center text-red-500">Local no seleccionado.</p>`;
+            
+            // Buscar si ya hay items de este restaurante en el carrito
+            const restaurantCartItems = cart.filter(item => item.restaurantId === restaurant.id);
+            const totalItems = restaurantCartItems.reduce((sum, item) => sum + item.quantity, 0);
+
+            return `
+                <button onclick="window.BAMBAM_APP.navigateTo('home')" class="text-red-600 font-medium mb-4 flex items-center">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-arrow-left mr-1"><path d="m12 19-7-7 7-7"/><path d="M19 12H5"/></svg>
+                    Volver a Locales
+                </button>
+                <section class="bg-white p-6 rounded-xl card">
+                    <h2 class="text-3xl font-extrabold text-gray-800 mb-2">${restaurant.name}</h2>
+                    <p class="text-gray-500 mb-6">¡Descubre sus deliciosos productos!</p>
+                    <div id="menu-items-list" class="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                        ${renderProducts(restaurant)}
+                    </div>
+                </section>
+                
+                <div class="fixed bottom-4 right-4 z-20">
+                    <button id="view-cart-btn" onclick="window.BAMBAM_APP.navigateTo('cart')" class="${totalItems > 0 ? 'bg-green-500 hover:bg-green-600' : 'bg-gray-400'} text-white font-bold py-3 px-6 rounded-full shadow-lg transition duration-300 transform hover:scale-105 flex items-center">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-shopping-bag mr-2"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z"/><path d="M3 6h18"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>
+                        Ver Carrito (${totalItems})
+                    </button>
+                </div>
+            `;
+        }
+
+        function renderProducts(restaurant) {
+            const products = restaurant.products || [];
+            if (products.length === 0) {
+                return `<p class="col-span-full text-center text-gray-500 p-8 border border-dashed rounded-xl">Este local aún no tiene productos cargados.</p>`;
+            }
+
+            return products.map((product, index) => {
+                const photoUrl = product.photoUrl || 'https://placehold.co/100x100/fecaca/9f1233?text=Comida';
+                // Usamos product.id si existe, sino el índice como fallback
+                const productId = product.id || `temp-${index}`; 
+                
+                // Formatear el precio
+                const price = typeof product.price === 'number' ? product.price.toFixed(2) : parseFloat(product.price || 0).toFixed(2);
+                
+                return `
+                    <div class="product-item bg-gray-50 p-4 rounded-xl border border-gray-200 flex space-x-4">
+                        <img src="${photoUrl}" onerror="this.onerror=null;this.src='https://placehold.co/100x100/fecaca/9f1233?text=Comida';" alt="${product.name}" class="w-24 h-24 object-cover rounded-lg flex-shrink-0">
+                        <div class="flex-grow">
+                            <h5 class="text-lg font-bold text-gray-800">${product.name}</h5>
+                            <p class="text-sm text-gray-600 mb-2">Precio: $${price}</p>
+                            
+                            <input type="text" id="obs-${productId}" placeholder="Ej: Sin tomate, poco picante" class="w-full text-xs p-1 border border-gray-300 rounded-lg mb-2 focus:ring-red-500 focus:border-red-500">
+                            
+                            <button onclick="window.BAMBAM_APP.addToCart('${restaurant.id}', {id: '${productId}', name: '${product.name}', price: ${price}})" class="btn-primary text-xs px-3 py-1 rounded-lg font-medium">
+                                Añadir al Carrito
+                            </button>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        // Cargar datos completos del menú
+        async function loadMenuData(restaurantId) {
+            viewContainer.innerHTML = `<div class="spinner mx-auto my-16"></div>`;
+
+            try {
+                const docRef = doc(getCollectionRef('restaurants'), restaurantId);
+                const docSnap = await getDoc(docRef);
+                
+                if (docSnap.exists()) {
+                    const data = docSnap.data();
+                    data.id = docSnap.id;
+                    selectedRestaurant = data;
+                    viewContainer.innerHTML = renderMenuView(data);
+
+                    // Re-asignar el listener del botón del carrito después de renderizar
+                    updateCartViewButton();
+
+                } else {
+                    viewContainer.innerHTML = `<p class="text-center text-red-500 my-16">Error: El local seleccionado no existe.</p>`;
+                }
+            } catch (error) {
+                viewContainer.innerHTML = `<p class="text-center text-red-500 my-16">Error al cargar el menú: ${error.message}</p>`;
+                console.error("Error al cargar menú:", error);
+            }
+        }
+        
+        function updateCartViewButton() {
+             const viewCartBtn = document.getElementById('view-cart-btn');
+             if (viewCartBtn && selectedRestaurant) {
+                const restaurantCartItems = cart.filter(item => item.restaurantId === selectedRestaurant.id);
+                const totalItems = restaurantCartItems.reduce((sum, item) => sum + item.quantity, 0);
+                
+                viewCartBtn.textContent = `Ver Carrito (${totalItems})`;
+                if (totalItems > 0) {
+                     viewCartBtn.classList.remove('bg-gray-400');
+                     viewCartBtn.classList.add('bg-green-500', 'hover:bg-green-600');
+                } else {
+                     viewCartBtn.classList.add('bg-gray-400');
+                     viewCartBtn.classList.remove('bg-green-500', 'hover:bg-green-600');
+                }
+             }
+        }
+
+        // --- LÓGICA DEL CARRITO ---
+        function addToCart(restaurantId, product) {
+            // Convertir precio a número flotante
+            const price = parseFloat(product.price);
+            if (isNaN(price)) {
+                alertModal("Error de Precio", "El precio del producto no es válido.");
+                return;
+            }
+
+            if (cart.length > 0 && cart[0].restaurantId !== restaurantId) {
+                alertModal("Carrito Múltiple", "Solo puedes hacer pedidos de un local a la vez. Vacía tu carrito para cambiar de local.");
+                return;
+            }
+
+            const obsInput = document.getElementById(`obs-${product.id}`);
+            const observation = obsInput ? obsInput.value.trim() : '';
+
+            // Crear un identificador único para el item con la observación
+            const uniqueId = `${product.id}-${observation.replace(/\s/g, '_')}`;
+
+            const existingItemIndex = cart.findIndex(item => item.uniqueId === uniqueId);
+
+            if (existingItemIndex > -1) {
+                cart[existingItemIndex].quantity += 1;
+            } else {
+                cart.push({
+                    uniqueId,
+                    restaurantId,
+                    id: product.id,
+                    name: product.name,
+                    price: price,
+                    quantity: 1,
+                    observation: observation
+                });
+            }
+
+            // Limpiar la observación después de añadir
+            if (obsInput) obsInput.value = '';
+
+            updateCartUI();
+            alertModal("Producto Añadido", `${product.name} (x1) añadido al carrito.`);
+
+            if (currentView === 'menu') {
+                updateCartViewButton();
+            }
+        }
+
+        function updateCartQuantity(uniqueId, change) {
+            const itemIndex = cart.findIndex(item => item.uniqueId === uniqueId);
+            if (itemIndex > -1) {
+                cart[itemIndex].quantity += change;
+                if (cart[itemIndex].quantity <= 0) {
+                    cart.splice(itemIndex, 1); // Eliminar si la cantidad es 0 o menos
+                }
+            }
+            updateCartUI();
+            if (currentView === 'cart') renderView(); // Volver a renderizar el carrito
+            if (currentView === 'menu') updateCartViewButton();
+        }
+
+        function renderCartView() {
+            if (cart.length === 0) {
+                 return `
+                    <p class="text-center text-gray-500 my-16 p-8 bg-white rounded-xl card">
+                        Tu carrito está vacío.
+                        <button onclick="window.BAMBAM_APP.navigateTo('home')" class="text-red-600 font-medium mt-3 block">
+                            Volver a Locales
+                        </button>
+                    </p>
+                `;
+            }
+
+            const total = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+            
+            return `
+                <button onclick="window.BAMBAM_APP.navigateTo('menu', selectedRestaurant || {id: cart[0].restaurantId, name: 'Local'})" class="text-red-600 font-medium mb-4 flex items-center">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-arrow-left mr-1"><path d="m12 19-7-7 7-7"/><path d="M19 12H5"/></svg>
+                    Volver al Menú
+                </button>
+                <section class="bg-white p-6 rounded-xl card mb-8">
+                    <h2 class="text-3xl font-bold text-gray-800 mb-6">Tu Pedido (${selectedRestaurant?.name || 'Local Desconocido'})</h2>
+                    
+                    <div id="cart-items" class="space-y-4">
+                        ${cart.map(item => `
+                            <div class="flex items-center justify-between border-b pb-3 pt-1">
+                                <div class="flex-grow pr-4">
+                                    <p class="font-semibold text-gray-800">${item.name} (${item.quantity}x)</p>
+                                    <p class="text-sm text-gray-500">$${(item.price * item.quantity).toFixed(2)}</p>
+                                    ${item.observation ? `<p class="text-xs text-red-500 italic">Obs: ${item.observation}</p>` : ''}
+                                </div>
+                                <div class="flex items-center space-x-2">
+                                    <button onclick="window.BAMBAM_APP.updateCartQuantity('${item.uniqueId}', 1)" class="bg-gray-200 hover:bg-gray-300 w-8 h-8 rounded-full font-bold text-lg">+</button>
+                                    <span class="w-6 text-center">${item.quantity}</span>
+                                    <button onclick="window.BAMBAM_APP.updateCartQuantity('${item.uniqueId}', -1)" class="bg-gray-200 hover:bg-gray-300 w-8 h-8 rounded-full font-bold text-lg">-</button>
+                                </div>
+                            </div>
+                        `).join('')}
+                    </div>
+
+                    <div class="mt-6 pt-4 border-t border-gray-200 flex justify-between items-center">
+                        <p class="text-xl font-bold text-gray-800">TOTAL:</p>
+                        <p class="text-2xl font-extrabold text-red-600">$${total.toFixed(2)}</p>
+                    </div>
+                </section>
+
+                <section id="checkout-form-section" class="bg-white p-6 rounded-xl card">
+                    <h3 class="text-xl font-bold text-gray-800 mb-4">Datos de Envío</h3>
+                    <form id="checkout-form" class="space-y-4">
+                        <input type="text" id="checkout-name" placeholder="Nombre" value="${currentUser?.name || ''}" required class="w-full p-3 border border-gray-300 rounded-lg">
+                        <input type="text" id="checkout-surname" placeholder="Apellido" value="${currentUser?.surname || ''}" required class="w-full p-3 border border-gray-300 rounded-lg">
+                        <textarea id="checkout-address" placeholder="Dirección de entrega (calle, número, referencia)" rows="2" required class="w-full p-3 border border-gray-300 rounded-lg"></textarea>
+                        <input type="tel" id="checkout-phone" placeholder="Número de Teléfono (Ej: 58412...)" value="${currentUser?.phone || ''}" required class="w-full p-3 border border-gray-300 rounded-lg">
+                        
+                        <button type="submit" class="w-full btn-primary font-bold py-3 px-4 rounded-lg transition duration-300">
+                            Realizar Pedido por WhatsApp
+                        </button>
+                    </form>
+                </section>
+            `;
+        }
+
+        // --- LÓGICA DE PEDIDO Y WHATSAPP ---
+        document.addEventListener('submit', async (e) => {
+            if (e.target.id === 'checkout-form') {
+                e.preventDefault();
+                handleOrderPlacement();
+            }
+        });
+
+        async function handleOrderPlacement() {
+            if (cart.length === 0 || !selectedRestaurant) {
+                alertModal("Error", "El carrito está vacío o el restaurante es desconocido.");
+                return;
+            }
+
+            const name = document.getElementById('checkout-name').value;
+            const surname = document.getElementById('checkout-surname').value;
+            const address = document.getElementById('checkout-address').value;
+            const phone = document.getElementById('checkout-phone').value;
+            const total = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+
+            const customerInfo = { name, surname, address, phone, userId: currentUser?.uid || 'anon' };
+            const orderDetails = {
+                restaurantId: selectedRestaurant.id,
+                restaurantName: selectedRestaurant.name,
+                customerInfo,
+                items: cart.map(item => ({
+                    name: item.name,
+                    quantity: item.quantity,
+                    price: item.price,
+                    observation: item.observation || 'Ninguna'
+                })),
+                total: total,
+                status: 'Pendiente',
+                createdAt: serverTimestamp()
+            };
+
+            // 1. Guardar el pedido en Firebase (para historial y Admin Panel)
+            try {
+                const ordersCollection = getCollectionRef('orders');
+                await addDoc(ordersCollection, orderDetails);
+            } catch (error) {
+                console.error("Error al guardar el pedido:", error);
+                alertModal("Error de BD", "El pedido se guardará en WhatsApp pero no pudo registrarse en la base de datos.");
+            }
+
+            // 2. Construir el mensaje de WhatsApp
+            let waMessage = `*PEDIDO BAMBAM DELIVERY - ${selectedRestaurant.name}*\n\n`;
+            waMessage += `*Cliente:* ${name} ${surname}\n`;
+            waMessage += `*Teléfono:* ${phone}\n`;
+            waMessage += `*Dirección (Para Motorizado):* ${address}\n\n`;
+            waMessage += `*Productos:*\n`;
+            orderDetails.items.forEach(item => {
+                waMessage += `• ${item.name} x${item.quantity} ($${item.price.toFixed(2)} c/u)\n`;
+                if (item.observation && item.observation !== 'Ninguna') {
+                    waMessage += `  - Obs: ${item.observation}\n`;
+                }
+            });
+            waMessage += `\n*TOTAL DEL PEDIDO: $${total.toFixed(2)}*\n\n`;
+            waMessage += `*¡IMPORTANTE!* Por favor, comparte tu ubicación actual por GPS a este chat para confirmar el punto de entrega.`;
+
+            const encodedMessage = encodeURIComponent(waMessage);
+            const waNumber = selectedRestaurant.whatsapp.replace('+', '').replace(/\s/g, '');
+            const waUrl = `https://wa.me/${waNumber}?text=${encodedMessage}`;
+
+            // 3. Abrir WhatsApp y mostrar mensaje al usuario
+            window.open(waUrl, '_blank');
+            
+            alertModal("Pedido Realizado", "Tu pedido ha sido enviado al WhatsApp del negocio. **Recuerda enviarles tu ubicación actual por GPS para confirmar la entrega.**");
+            
+            // 4. Limpiar el estado
+            cart = [];
+            selectedRestaurant = null;
+            updateCartUI();
+            navigateTo('home');
+        }
+
+        // --- 5. VISTA DE AUTENTICACIÓN (LOGIN/REGISTRO) ---
+        function renderAuthView(mode) {
+            const isLogin = mode === 'login';
+            return `
+                <section class="bg-white p-6 rounded-xl card max-w-md mx-auto">
+                    <h2 class="text-3xl font-bold text-red-600 mb-6 text-center">${isLogin ? 'Iniciar Sesión' : 'Registrarse'}</h2>
+                    
+                    <form id="auth-form" class="space-y-4">
+                        <input type="email" id="auth-email" placeholder="Correo Electrónico" required class="w-full p-3 border border-gray-300 rounded-lg">
+                        <input type="password" id="auth-password" placeholder="Contraseña" required class="w-full p-3 border border-gray-300 rounded-lg">
+                        
+                        ${!isLogin ? `
+                            <input type="text" id="auth-name" placeholder="Nombre" required class="w-full p-3 border border-gray-300 rounded-lg">
+                            <input type="text" id="auth-surname" placeholder="Apellido" required class="w-full p-3 border border-gray-300 rounded-lg">
+                            <input type="date" id="auth-dob" placeholder="Fecha de Nacimiento" required class="w-full p-3 border border-gray-300 rounded-lg">
+                            <input type="tel" id="auth-phone" placeholder="Número de Teléfono (Ej: 58412...)" required class="w-full p-3 border border-gray-300 rounded-lg">
+                        ` : ''}
+                        
+                        <p id="auth-error" class="text-red-500 text-sm hidden"></p>
+                        
+                        <button type="submit" id="auth-submit-btn" class="w-full btn-primary font-bold py-3 px-4 rounded-lg transition duration-300">
+                            ${isLogin ? 'Ingresar' : 'Crear Cuenta'}
+                        </button>
+                    </form>
+
+                    <div class="mt-4 text-center">
+                        <button onclick="window.BAMBAM_APP.navigateTo('${isLogin ? 'register' : 'login'}')" class="text-sm text-red-500 hover:text-red-700">
+                            ${isLogin ? '¿No tienes cuenta? Regístrate aquí.' : '¿Ya tienes cuenta? Ingresa aquí.'}
+                        </button>
+                        <button onclick="window.BAMBAM_APP.navigateTo('home')" class="text-sm text-gray-500 hover:text-gray-700 block mt-2">
+                            Volver al Inicio
+                        </button>
+                    </div>
+                </section>
+            `;
+        }
+
+        // --- HANDLERS DE AUTENTICACIÓN ---
+
+        document.addEventListener('submit', async (e) => {
+            if (e.target.id === 'auth-form') {
+                e.preventDefault();
+                const email = document.getElementById('auth-email').value;
+                const password = document.getElementById('auth-password').value;
+                const errorDiv = document.getElementById('auth-error');
+                const submitBtn = document.getElementById('auth-submit-btn');
+
+                errorDiv.classList.add('hidden');
+                submitBtn.disabled = true;
+
+                try {
+                    if (currentView === 'register') {
+                        const name = document.getElementById('auth-name').value;
+                        const surname = document.getElementById('auth-surname').value;
+                        const dob = document.getElementById('auth-dob').value;
+                        const phone = document.getElementById('auth-phone').value;
+                        
+                        const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+                        
+                        // Guardar perfil en Firestore (Colección privada 'perfiles')
+                        const userProfile = {
+                            email, name, surname, dob, phone,
+                            role: 'customer',
+                            createdAt: serverTimestamp()
+                        };
+                        // Usar 'perfiles' como nombre de colección privada
+                        const userDocRef = doc(getCollectionRef('perfiles', true), userCredential.user.uid);
+                        await setDoc(userDocRef, userProfile);
+                        
+                        alertModal("Registro Exitoso", `¡Bienvenido, ${name}! Has iniciado sesión.`);
+                        navigateTo('home');
+
+                    } else if (currentView === 'login') {
+                        await signInWithEmailAndPassword(auth, email, password);
+                        // El listener onAuthStateChanged maneja el resto de la navegación.
+                        alertModal("Inicio de Sesión Exitoso", "¡Bienvenido de vuelta!");
+                    }
+                } catch (error) {
+                    errorDiv.textContent = `Error: ${error.message.substring(0, 80)}`;
+                    errorDiv.classList.remove('hidden');
+                    console.error("Error de autenticación:", error);
+                } finally {
+                    submitBtn.disabled = false;
+                }
+            }
+        });
+
+        function handleLogout() {
+            // Si el usuario es admin/supervisor por el login secreto, resetear el rol al hacer logout
+            if (currentUserRole !== 'customer') {
+                currentUserRole = 'customer';
+                navigateTo('home');
+            }
+            signOut(auth).then(() => {
+                alertModal("Cierre de Sesión", "Has cerrado sesión correctamente.");
+                navigateTo('home');
+            }).catch((error) => {
+                console.error("Error al cerrar sesión:", error);
+                alertModal("Error", "No se pudo cerrar la sesión.");
+            });
+        }
+
+        // --- 6. VISTA DE LOGIN ADMIN ---
+        function renderAdminLoginView() {
+            return `
+                <section class="bg-white p-6 rounded-xl card max-w-md mx-auto">
+                    <h2 class="text-3xl font-bold text-red-600 mb-6 text-center">Acceso de Administrador</h2>
+                    <form id="admin-auth-form" class="space-y-4">
+                        <input type="text" id="admin-user" placeholder="Usuario Admin (Bambam)" required class="w-full p-3 border border-gray-300 rounded-lg">
+                        <input type="password" id="admin-key" placeholder="Clave Admin (27146006)" required class="w-full p-3 border border-gray-300 rounded-lg">
+                        
+                        <p id="admin-error" class="text-red-500 text-sm hidden"></p>
+                        
+                        <button type="submit" class="w-full btn-primary font-bold py-3 px-4 rounded-lg transition duration-300">
+                            Acceder al Panel
+                        </button>
+                    </form>
+                    <button onclick="window.BAMBAM_APP.navigateTo('home')" class="text-sm text-gray-500 hover:text-gray-700 block mt-4 mx-auto">
+                        Volver al Inicio
+                    </button>
+                </section>
+            `;
+        }
+
+        document.addEventListener('submit', async (e) => {
+            if (e.target.id === 'admin-auth-form') {
+                e.preventDefault();
+                const user = document.getElementById('admin-user').value;
+                const key = document.getElementById('admin-key').value;
+                const errorDiv = document.getElementById('admin-error');
+
+                if (user === 'Bambam' && key === '27146006') {
+                    // Simulación de rol administrativo para el entorno Canvas sin autenticación Firebase directa
+                    currentUserRole = 'admin'; 
+                    alertModal("Acceso Concedido", "Bienvenido, Administrador Bambam.");
+                    // Forzar a que el botón de auth muestre el rol
+                    authButton.textContent = 'Hola, admin'; 
+                    authButton.onclick = () => handleLogout();
+                    navigateTo('admin-panel');
+                } else {
+                    errorDiv.textContent = 'Usuario o clave incorrectos.';
+                    errorDiv.classList.remove('hidden');
+                }
+            }
+        });
+
+        // --- 7. PANEL DE ADMINISTRACIÓN ---
+        
+        function renderAdminPanel() {
+            const allowedRoles = ['admin', 'supervisor'];
+            if (!allowedRoles.includes(currentUserRole)) return renderAccessDenied();
+
+            return `
+                <section class="bg-white p-6 rounded-xl card">
+                    <h2 class="text-3xl font-bold text-red-600 mb-6">Panel de Administración</h2>
+                    <p class="text-sm text-gray-500 mb-4">Rol Actual: <span class="font-bold uppercase">${currentUserRole}</span>. Usuario ID: ${currentUser?.uid || 'N/A'}</p>
+                    
+                    <div id="admin-tabs" class="flex border-b mb-6 overflow-x-auto">
+                        <button class="tab-btn p-3 border-r border-red-500 font-medium whitespace-nowrap" data-tab="pedidos">Pedidos en Proceso</button>
+                        <button class="tab-btn p-3 border-r font-medium whitespace-nowrap" data-tab="restaurants">Gestión de Locales</button>
+                        <button class="tab-btn p-3 border-r font-medium whitespace-nowrap" data-tab="motorizados">Motorizados</button>
+                        <button class="tab-btn p-3 border-r font-medium whitespace-nowrap" data-tab="users">Gestión de Usuarios</button>
+                        <button class="tab-btn p-3 font-medium whitespace-nowrap" data-tab="history">Historial de Pedidos</button>
+                    </div>
+
+                    <div id="admin-content">
+                        <!-- Contenido de la pestaña se carga aquí -->
+                        <div class="spinner mx-auto my-16"></div>
+                    </div>
+                </section>
+            `;
+        }
+
+        document.addEventListener('click', (e) => {
+            if (e.target.classList.contains('tab-btn')) {
+                loadAdminTab(e.target.dataset.tab);
+            }
+        });
+
+        function loadAdminContent() {
+            // Cargar por defecto la pestaña de Pedidos
+            const tabBtns = document.querySelectorAll('.tab-btn');
+            if (tabBtns.length > 0) {
+                tabBtns[0].classList.add('bg-red-50', 'text-red-600');
+                loadAdminTab('pedidos');
+            }
+        }
+        
+        // --- GESTIÓN DE PESTAÑAS ADMIN ---
+        async function loadAdminTab(tabName) {
+            const contentDiv = document.getElementById('admin-content');
+            const tabBtns = document.querySelectorAll('.tab-btn');
+            tabBtns.forEach(btn => btn.classList.remove('bg-red-50', 'text-red-600'));
+            const activeBtn = document.querySelector(`.tab-btn[data-tab="${tabName}"]`);
+            if (activeBtn) activeBtn.classList.add('bg-red-50', 'text-red-600');
+
+            contentDiv.innerHTML = `<div class="spinner mx-auto my-16"></div>`;
+
+            if (unsubscribeOrders) {
+                unsubscribeOrders(); // Limpiar listener anterior si existe
+                unsubscribeOrders = null;
+            }
+
+            switch (tabName) {
+                case 'pedidos':
+                    renderPedidosEnProceso(contentDiv);
+                    break;
+                case 'restaurants':
+                    await renderRestaurantManagement(contentDiv);
+                    break;
+                case 'motorizados':
+                    await renderMotorizadoManagement(contentDiv);
+                    break;
+                case 'users':
+                    await renderUserManagement(contentDiv);
+                    break;
+                case 'history':
+                    await renderOrderHistory(contentDiv);
+                    break;
+            }
+        }
+        
+        // --- FUNCIÓN DE UTILIDAD CRUD (Admin) ---
+        function renderForm(title, fields, id = null, data = {}) {
+             const fieldsHTML = fields.map(field => `
+                <div class="mb-3">
+                    <label for="${field.id}" class="block text-sm font-medium text-gray-700">${field.label}</label>
+                    <input type="${field.type}" id="${field.id}" value="${data[field.id] || ''}" ${field.required ? 'required' : ''} class="mt-1 w-full p-2 border border-gray-300 rounded-lg">
+                </div>
+            `).join('');
+
+            return `
+                <h4 class="text-xl font-bold text-gray-800 mb-4">${title}</h4>
+                <form id="${title.toLowerCase().replace(/\s/g, '-')}-form" data-id="${id || ''}" class="space-y-4">
+                    ${fieldsHTML}
+                    <button type="submit" class="w-full btn-primary font-bold py-2 px-4 rounded-lg">${id ? 'Guardar Cambios' : 'Añadir Nuevo'}</button>
+                </form>
+            `;
+        }
+        
+        // --- GESTIÓN DE LOCALES ---
+        async function renderRestaurantManagement(contentDiv) {
+            // Implementación completa de CRUD
+            const restaurantsRef = getCollectionRef('restaurants');
+            const snapshot = await getDocs(restaurantsRef);
+            const restaurants = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+            let formHTML = renderForm('Nuevo Local', [
+                { id: 'name', label: 'Nombre del Local', type: 'text', required: true },
+                { id: 'whatsapp', label: 'Número de WhatsApp (Ej: 58412...)', type: 'tel', required: true },
+                { id: 'photoUrl', label: 'URL Foto/Logo (Opcional)', type: 'url', required: false },
+            ]);
+
+            let listHTML = restaurants.map(r => `
+                <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center p-3 border-b hover:bg-gray-50">
+                    <div class="flex-grow mb-2 sm:mb-0">
+                        <p class="font-bold">${r.name}</p>
+                        <p class="text-sm text-gray-500">WA: ${r.whatsapp} | Productos: ${r.products ? r.products.length : 0}</p>
+                    </div>
+                    <div class="space-x-2 flex flex-wrap gap-1">
+                        <button class="text-xs bg-blue-500 text-white px-3 py-1 rounded edit-restaurant" data-id="${r.id}" data-name="${r.name}" data-whatsapp="${r.whatsapp}" data-photourl="${r.photoUrl || ''}">Editar</button>
+                        <button class="text-xs bg-yellow-500 text-white px-3 py-1 rounded manage-products" data-id="${r.id}" data-name="${r.name}">Productos</button>
+                        <button class="text-xs bg-red-500 text-white px-3 py-1 rounded delete-restaurant" data-id="${r.id}">Eliminar</button>
+                    </div>
+                </div>
+            `).join('');
+
+            contentDiv.innerHTML = `
+                <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    <div class="lg:col-span-1 p-4 border rounded-xl" id="restaurant-form-container">${formHTML}</div>
+                    <div class="lg:col-span-2">
+                        <h4 class="text-xl font-bold text-gray-800 mb-4">Locales Registrados</h4>
+                        <div id="restaurant-list">${listHTML}</div>
+                    </div>
+                </div>
+                <div id="product-management-modal" class="hidden"></div>
+            `;
+            
+            // Re-asignar listener de formulario
+            const formElement = document.getElementById('nuevo-local-form');
+            if (formElement) formElement.addEventListener('submit', handleRestaurantSubmit);
+            document.getElementById('restaurant-list').addEventListener('click', handleRestaurantActions);
+        }
+        
+        // Lógica de CRUD
+        async function handleRestaurantSubmit(e) {
+            e.preventDefault();
+            const form = e.target;
+            const id = form.dataset.id;
+            const data = {
+                name: form.querySelector('#name').value,
+                whatsapp: form.querySelector('#whatsapp').value,
+                photoUrl: form.querySelector('#photoUrl').value,
+            };
+            
+            try {
+                if (id) {
+                    await updateDoc(doc(getCollectionRef('restaurants'), id), data);
+                    alertModal('Éxito', 'Local actualizado correctamente.');
+                } else {
+                    await addDoc(getCollectionRef('restaurants'), {...data, products: []});
+                    alertModal('Éxito', 'Local añadido correctamente.');
+                }
+                loadAdminTab('restaurants'); // Recargar la pestaña
+            } catch (error) {
+                alertModal('Error DB', error.message);
+                console.error("Error CRUD Local:", error);
+            }
+        }
+        
+        async function handleRestaurantActions(e) {
+            const id = e.target.dataset.id;
+            if (!id) return;
+            
+            if (e.target.classList.contains('delete-restaurant')) {
+                if (confirm('¿Estás seguro de eliminar este local? Se eliminarán también sus productos.')) {
+                    await deleteDoc(doc(getCollectionRef('restaurants'), id));
+                    alertModal('Éxito', 'Local eliminado.');
+                    loadAdminTab('restaurants');
+                }
+            } else if (e.target.classList.contains('edit-restaurant')) {
+                // Rellenar el formulario para edición
+                const formContainer = document.getElementById('restaurant-form-container');
+                const formHTML = renderForm('Editar Local', [
+                    { id: 'name', label: 'Nombre del Local', type: 'text', required: true },
+                    { id: 'whatsapp', label: 'Número de WhatsApp (Ej: 58412...)', type: 'tel', required: true },
+                    { id: 'photoUrl', label: 'URL Foto/Logo (Opcional)', type: 'url', required: false },
+                ], id, {
+                    name: e.target.dataset.name,
+                    whatsapp: e.target.dataset.whatsapp,
+                    photoUrl: e.target.dataset.photourl
+                });
+                formContainer.innerHTML = formHTML;
+                const formElement = document.getElementById('editar-local-form');
+                if (formElement) formElement.addEventListener('submit', handleRestaurantSubmit);
+                
+            } else if (e.target.classList.contains('manage-products')) {
+                showProductModal(id, e.target.dataset.name);
+            }
+        }
+
+        // --- GESTIÓN DE PRODUCTOS (MODAL) ---
+        async function showProductModal(restaurantId, restaurantName) {
+            const modalDiv = document.getElementById('product-management-modal');
+            modalDiv.classList.remove('hidden');
+            modalDiv.innerHTML = `
+                <div id="product-modal" class="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-40 p-4">
+                    <div class="bg-white p-6 rounded-xl card max-w-4xl w-full h-[90vh] flex flex-col">
+                        <h3 class="text-2xl font-bold text-red-600 mb-4">Productos de ${restaurantName}</h3>
+                        <button onclick="document.getElementById('product-management-modal').classList.add('hidden')" class="absolute top-4 right-4 text-gray-500 hover:text-red-600">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-x"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+                        </button>
+
+                        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 overflow-y-auto flex-grow">
+                            <div class="lg:col-span-1 p-4 border rounded-xl h-fit">
+                                ${renderForm('Nuevo Producto', [
+                                    { id: 'pName', label: 'Nombre Producto', type: 'text', required: true },
+                                    { id: 'pPrice', label: 'Precio ($)', type: 'number', required: true },
+                                    { id: 'pPhotoUrl', label: 'URL Foto (Opcional)', type: 'url', required: false },
+                                ])}
+                            </div>
+                            <div class="lg:col-span-2 p-4 border rounded-xl">
+                                <h4 class="text-xl font-bold text-gray-800 mb-4">Lista de Productos</h4>
+                                <div id="product-list-container">
+                                    <div class="spinner mx-auto my-8"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            document.getElementById('nuevo-producto-form').addEventListener('submit', (e) => handleProductSubmit(e, restaurantId));
+            loadProductList(restaurantId);
+        }
+
+        async function loadProductList(restaurantId) {
+            const container = document.getElementById('product-list-container');
+            const docSnap = await getDoc(doc(getCollectionRef('restaurants'), restaurantId));
+            const products = docSnap.exists() ? docSnap.data().products || [] : [];
+            
+            container.innerHTML = products.map((p, index) => `
+                <div class="flex justify-between items-center p-3 border-b hover:bg-gray-50">
+                    <div class="flex-grow">
+                        <p class="font-bold">${p.name}</p>
+                        <p class="text-sm text-gray-500">$${parseFloat(p.price).toFixed(2)}</p>
+                    </div>
+                    <div class="space-x-2">
+                        <button class="text-xs bg-red-500 text-white px-3 py-1 rounded delete-product" data-index="${index}" data-id="${p.id}">Eliminar</button>
+                    </div>
+                </div>
+            `).join('') || '<p class="text-center text-gray-500">No hay productos cargados.</p>';
+
+            // Limpiar listeners antiguos antes de añadir uno nuevo si es necesario, aunque en este caso se añade al contenedor padre
+            container.onclick = (e) => handleProductDelete(e, restaurantId);
+        }
+
+        async function handleProductSubmit(e, restaurantId) {
+            e.preventDefault();
+            const form = e.target;
+            const newProduct = {
+                // Usar ID único solo si no estamos editando (aquí solo implementamos añadir)
+                id: crypto.randomUUID(), 
+                name: form.querySelector('#pName').value,
+                price: parseFloat(form.querySelector('#pPrice').value),
+                photoUrl: form.querySelector('#pPhotoUrl').value
+            };
+            
+            if (isNaN(newProduct.price)) {
+                 alertModal('Error de Formato', 'El precio debe ser un número válido.');
+                 return;
+            }
+
+            try {
+                const docRef = doc(getCollectionRef('restaurants'), restaurantId);
+                const docSnap = await getDoc(docRef);
+                const products = docSnap.exists() ? docSnap.data().products || [] : [];
+                
+                products.push(newProduct);
+                await updateDoc(docRef, { products: products });
+                
+                alertModal('Éxito', 'Producto añadido.');
+                form.reset();
+                loadProductList(restaurantId);
+            } catch (error) {
+                alertModal('Error DB', error.message);
+                console.error("Error CRUD Producto:", error);
+            }
+        }
+        
+        async function handleProductDelete(e, restaurantId) {
+            if (!e.target.classList.contains('delete-product')) return;
+
+            const indexToDelete = parseInt(e.target.dataset.index);
+
+            if (confirm('¿Estás seguro de eliminar este producto?')) {
+                 try {
+                    const docRef = doc(getCollectionRef('restaurants'), restaurantId);
+                    const docSnap = await getDoc(docRef);
+                    const products = docSnap.exists() ? docSnap.data().products || [] : [];
+                    
+                    products.splice(indexToDelete, 1); // Eliminar por índice
+                    
+                    await updateDoc(docRef, { products: products });
+                    
+                    alertModal('Éxito', 'Producto eliminado.');
+                    loadProductList(restaurantId);
+                } catch (error) {
+                    alertModal('Error DB', error.message);
+                    console.error("Error CRUD Producto:", error);
+                }
+            }
+        }
+        
+        // --- PEDIDOS EN PROCESO (ON SNAPSHOT) ---
+        function renderPedidosEnProceso(contentDiv) {
+            contentDiv.innerHTML = `
+                <h4 class="text-xl font-bold text-gray-800 mb-4">Pedidos con Status 'Pendiente' o 'En Proceso'</h4>
+                <div id="pedidos-list-container">
+                    <div class="spinner mx-auto my-8"></div>
+                </div>
+            `;
+            const container = document.getElementById('pedidos-list-container');
+            const ordersRef = getCollectionRef('orders');
+            
+            // Query para pedidos pendientes o en proceso
+            const q = query(ordersRef, where('status', 'in', ['Pendiente', 'En Proceso']));
+
+            // onSnapshot para actualización en tiempo real
+            unsubscribeOrders = onSnapshot(q, (querySnapshot) => {
+                const orders = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                
+                container.innerHTML = orders.map(order => {
+                    const statusColor = order.status === 'Pendiente' ? 'bg-yellow-100 text-yellow-800' : 'bg-blue-100 text-blue-800';
+                    const createdAt = order.createdAt?.toDate ? order.createdAt.toDate().toLocaleString() : 'N/A';
+                    return `
+                        <div class="p-4 mb-4 border rounded-xl card shadow-sm">
+                            <div class="flex justify-between items-start mb-2">
+                                <p class="font-bold text-lg text-gray-800">Pedido #${order.id.substring(0, 8)}</p>
+                                <span class="text-xs font-semibold px-3 py-1 rounded-full ${statusColor}">${order.status}</span>
+                            </div>
+                            <p class="text-sm">Cliente: ${order.customerInfo.name} ${order.customerInfo.surname} (${order.customerInfo.phone})</p>
+                            <p class="text-sm">Local: ${order.restaurantName || 'Desconocido'}</p>
+                            <p class="text-sm">Realizado: ${createdAt}</p>
+                            <p class="text-sm mb-2">Total: <span class="font-bold text-red-600">$${order.total.toFixed(2)}</span></p>
+
+                            <div class="bg-gray-50 p-3 rounded-lg text-xs">
+                                <p class="font-semibold mb-1">Items:</p>
+                                ${order.items.map(item => `
+                                    <p>- ${item.name} x${item.quantity} | Obs: ${item.observation || 'Ninguna'}</p>
+                                `).join('')}
+                                <p class="mt-2 font-semibold">Dirección: ${order.customerInfo.address}</p>
+                            </div>
+                            
+                            <div class="mt-4 space-x-2 flex flex-wrap gap-2">
+                                <button class="text-xs bg-green-600 hover:bg-green-700 text-white px-3 py-1 rounded update-order-status" data-id="${order.id}" data-status="Entregado">Marcar Entregado</button>
+                                <button class="text-xs bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded update-order-status" data-id="${order.id}" data-status="Cancelado">Marcar Cancelado</button>
+                            </div>
+                        </div>
+                    `;
+                }).join('') || '<p class="text-center text-gray-500">No hay pedidos pendientes o en proceso.</p>';
+
+                container.addEventListener('click', handleOrderStatusUpdate);
+            }, (error) => {
+                console.error("Error onSnapshot Pedidos:", error);
+                container.innerHTML = '<p class="text-red-500">Error al cargar pedidos en tiempo real.</p>';
+            });
+        }
+        
+        async function handleOrderStatusUpdate(e) {
+            if (!e.target.classList.contains('update-order-status')) return;
+            const id = e.target.dataset.id;
+            const newStatus = e.target.dataset.status;
+
+            if (confirm(`¿Confirmar cambio de estado a ${newStatus} para el pedido #${id.substring(0, 8)}?`)) {
+                try {
+                    await updateDoc(doc(getCollectionRef('orders'), id), { status: newStatus, completedAt: serverTimestamp() });
+                    alertModal('Éxito', `Pedido #${id.substring(0, 8)} actualizado a ${newStatus}.`);
+                } catch (error) {
+                    alertModal('Error DB', error.message);
+                    console.error("Error al actualizar estado de pedido:", error);
+                }
+            }
+        }
+
+        // --- HISTORIAL DE PEDIDOS ---
+        async function renderOrderHistory(contentDiv) {
+             const ordersRef = getCollectionRef('orders');
+             const snapshot = await getDocs(ordersRef);
+             let orders = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+             
+             // Filtrar solo los pedidos completados/cancelados
+             orders = orders.filter(o => ['Entregado', 'Cancelado'].includes(o.status));
+             
+             // Ordenar por fecha (más reciente primero)
+             orders.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+
+
+             if (orders.length === 0) {
+                 contentDiv.innerHTML = '<p class="text-center text-gray-500 p-8 border border-dashed rounded-xl">No hay historial de pedidos.</p>';
+                 return;
+             }
+
+             contentDiv.innerHTML = orders.map(order => {
+                const statusColor = order.status === 'Entregado' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800';
+                const completedAt = order.completedAt?.toDate ? order.completedAt.toDate().toLocaleString() : 'N/A';
+                 return `
+                    <div class="p-3 mb-3 border rounded-lg hover:bg-gray-50">
+                        <div class="flex justify-between items-center">
+                            <p class="font-bold">#${order.id.substring(0, 8)} - ${order.customerInfo.name}</p>
+                            <span class="text-xs font-semibold px-2 py-0.5 rounded-full ${statusColor}">${order.status}</span>
+                        </div>
+                        <p class="text-xs text-gray-500">Total: $${order.total.toFixed(2)} | Local: ${order.restaurantName || 'N/A'}</p>
+                        <p class="text-xs text-gray-500">Finalizado: ${completedAt}</p>
+                    </div>
+                `;
+             }).join('');
+        }
+
+
+        // --- GESTIÓN DE MOTORIZADOS ---
+        async function renderMotorizadoManagement(contentDiv) {
+            const motorizadosRef = getCollectionRef('motorizados');
+            const snapshot = await getDocs(motorizadosRef);
+            const motorizados = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+            let formHTML = renderForm('Nuevo Motorizado', [
+                { id: 'mName', label: 'Nombre', type: 'text', required: true },
+                { id: 'mSurname', label: 'Apellido', type: 'text', required: true },
+                { id: 'mPhone', label: 'Teléfono', type: 'tel', required: true },
+                { id: 'mCedula', label: 'Cédula', type: 'text', required: true },
+                { id: 'mPlate', label: 'Placa de la Moto', type: 'text', required: true },
+                { id: 'mModel', label: 'Modelo de la Moto', type: 'text', required: true },
+            ]);
+
+            let listHTML = motorizados.map(m => `
+                <div class="flex justify-between items-center p-3 border-b hover:bg-gray-50">
+                    <div class="flex-grow">
+                        <p class="font-bold">${m.mName} ${m.mSurname}</p>
+                        <p class="text-sm text-gray-500">Cédula: ${m.mCedula} | Placa: ${m.mPlate} | Modelo: ${m.mModel}</p>
+                    </div>
+                    <div class="space-x-2">
+                        <button class="text-xs bg-red-500 text-white px-3 py-1 rounded delete-motorizado" data-id="${m.id}">Eliminar</button>
+                    </div>
+                </div>
+            `).join('');
+
+            contentDiv.innerHTML = `
+                <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    <div class="lg:col-span-1 p-4 border rounded-xl h-fit">
+                        ${formHTML}
+                        <p class="text-xs text-gray-500 mt-4">Nota: La gestión de edición de motorizados se omite por simplicidad.</p>
+                    </div>
+                    <div class="lg:col-span-2">
+                        <h4 class="text-xl font-bold text-gray-800 mb-4">Motorizados Activos</h4>
+                        <div id="motorizado-list">${listHTML}</div>
+                    </div>
+                </div>
+            `;
+            
+            const formElement = document.getElementById('nuevo-motorizado-form');
+            if (formElement) formElement.addEventListener('submit', handleMotorizadoSubmit);
+            document.getElementById('motorizado-list').addEventListener('click', handleMotorizadoDelete);
+        }
+
+        async function handleMotorizadoSubmit(e) {
+            e.preventDefault();
+            const form = e.target;
+            const data = {
+                mName: form.querySelector('#mName').value,
+                mSurname: form.querySelector('#mSurname').value,
+                mPhone: form.querySelector('#mPhone').value,
+                mCedula: form.querySelector('#mCedula').value,
+                mPlate: form.querySelector('#mPlate').value,
+                mModel: form.querySelector('#mModel').value,
+                createdAt: serverTimestamp()
+            };
+            
+            try {
+                await addDoc(getCollectionRef('motorizados'), data);
+                alertModal('Éxito', 'Motorizado añadido.');
+                form.reset();
+                loadAdminTab('motorizados');
+            } catch (error) {
+                alertModal('Error DB', error.message);
+                console.error("Error CRUD Motorizado:", error);
+            }
+        }
+        
+        async function handleMotorizadoDelete(e) {
+            if (!e.target.classList.contains('delete-motorizado')) return;
+            const id = e.target.dataset.id;
+             if (confirm('¿Estás seguro de eliminar a este motorizado?')) {
+                try {
+                    await deleteDoc(doc(getCollectionRef('motorizados'), id));
+                    alertModal('Éxito', 'Motorizado eliminado.');
+                    loadAdminTab('motorizados');
+                } catch (error) {
+                    alertModal('Error DB', error.message);
+                }
+            }
+        }
+        
+        // --- GESTIÓN DE USUARIOS (Soporte/Supervisores) ---
+        async function renderUserManagement(contentDiv) {
+            // Se asume que getCollectionRef('perfiles', true) devuelve la colección de perfiles de todos los usuarios (clientes y equipo)
+            const profilesRef = collection(db, `artifacts/${appId}/users`); 
+            let users = [];
+
+            // Nota: Para listar todos los perfiles de todos los usuarios en la ruta privada, 
+            // se debe iterar sobre la subcolección 'perfiles' de cada UID.
+            // Para simplificar, asumiremos que los perfiles están directamente en artifacts/{appId}/public/data/perfiles.
+            // Sin embargo, para cumplir la regla de la ruta privada:
+
+            const perfilesCollectionPath = `artifacts/${appId}/public/data/perfiles_equipo`; // Usamos una colección pública para equipo por simplicidad en la UI
+            const profilesSnapshot = await getDocs(collection(db, perfilesCollectionPath));
+            
+            // Si el admin está logueado por el login secreto, su rol es 'admin', no tiene un UID en Firestore.
+            // Si el admin está logueado por Firebase, sí tiene UID.
+            
+            users = profilesSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            
+            const teamUsers = users.filter(u => u.role === 'admin' || u.role === 'supervisor');
+            
+             let formHTML = renderForm('Añadir/Actualizar Miembro de Equipo', [
+                { id: 'uEmail', label: 'Correo del Usuario', type: 'email', required: true },
+             ]);
+            
+            let teamListHTML = teamUsers.map(u => `
+                <div class="flex justify-between items-center p-3 border-b hover:bg-gray-50">
+                    <p class="font-bold">${u.name || 'N/A'} (${u.email})</p>
+                    <div class="flex items-center space-x-2">
+                        <p class="text-sm font-semibold text-red-600 uppercase">${u.role}</p>
+                        <button class="text-xs bg-red-500 text-white px-3 py-1 rounded delete-team-member" data-id="${u.id}">Eliminar</button>
+                    </div>
+                </div>
+            `).join('') || '<p class="text-center text-gray-500">No hay personal de equipo.</p>';
+
+            contentDiv.innerHTML = `
+                <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    <div class="lg:col-span-1 p-4 border rounded-xl h-fit">
+                        <h4 class="text-xl font-bold text-gray-800 mb-4">Asignar Rol (Equipo)</h4>
+                        <p class="text-sm text-gray-600 mb-3">Introduce el correo y asigna el rol.</p>
+                        <form id="asignar-rol-form" class="space-y-4">
+                            <input type="email" id="assign-email" placeholder="Correo del Usuario" required class="w-full p-3 border border-gray-300 rounded-lg">
+                            <input type="text" id="assign-name" placeholder="Nombre" required class="w-full p-3 border border-gray-300 rounded-lg">
+                            <select id="assign-role" class="w-full p-3 border border-gray-300 rounded-lg">
+                                <option value="supervisor">Supervisor de Zonas</option>
+                                <option value="admin">Administrador Total</option>
+                            </select>
+                            <button type="submit" class="w-full btn-primary font-bold py-2 px-4 rounded-lg">Añadir/Actualizar Rol</button>
+                        </form>
+                    </div>
+                    <div class="lg:col-span-2">
+                         <h4 class="text-xl font-bold text-gray-800 mb-4">Equipo (Admin/Supervisor)</h4>
+                        <div id="team-list" class="mb-6 border rounded-xl" onclick="handleTeamMemberDelete(event, '${perfilesCollectionPath}')">${teamListHTML}</div>
+                    </div>
+                </div>
+            `;
+            
+            document.getElementById('asignar-rol-form').addEventListener('submit', (e) => handleRoleAssignment(e, perfilesCollectionPath));
+        }
+        
+        async function handleRoleAssignment(e, collectionPath) {
+            e.preventDefault();
+            const email = document.getElementById('assign-email').value;
+            const name = document.getElementById('assign-name').value;
+            const role = document.getElementById('assign-role').value;
+
+            try {
+                // Generar un ID basado en el correo
+                const docId = email.replace(/[^a-zA-Z0-9]/g, '_'); 
+                const docRef = doc(db, collectionPath, docId);
+                
+                await setDoc(docRef, { 
+                    email: email,
+                    name: name,
+                    role: role,
+                    updatedAt: serverTimestamp()
+                }, { merge: true }); // Usamos merge: true para actualizar si ya existe
+
+                alertModal('Éxito', `Rol actualizado a '${role}' para ${email}.`);
+                loadAdminTab('users');
+            } catch (error) {
+                alertModal('Error DB', error.message);
+                console.error("Error al asignar rol:", error);
+            }
+        }
+        
+        async function handleTeamMemberDelete(e, collectionPath) {
+            if (!e.target.classList.contains('delete-team-member')) return;
+            const id = e.target.dataset.id;
+             if (confirm('¿Estás seguro de eliminar a este miembro del equipo?')) {
+                try {
+                    await deleteDoc(doc(db, collectionPath, id));
+                    alertModal('Éxito', 'Miembro eliminado.');
+                    loadAdminTab('users');
+                } catch (error) {
+                    alertModal('Error DB', error.message);
+                }
+            }
+        }
+
+        // Exponer funciones globales para que el HTML pueda llamarlas directamente
+        window.BAMBAM_APP = {
+            navigateTo,
+            addToCart,
+            updateCartQuantity
+        };
+
+        // Renderizar la vista inicial al final de la carga del script
+        renderView();
+
+    </script>
+
+</body>
+</html>
